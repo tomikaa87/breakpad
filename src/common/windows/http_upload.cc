@@ -264,6 +264,46 @@ wstring HTTPUpload::GenerateRequestHeader(const wstring &boundary) {
   return header;
 }
 
+bool HTTPUpload::AddFileToRequestBody(string* request_body,
+                                      const std::string boundary_str,
+                                      const std::wstring& name,
+                                      const std::wstring& path)
+{
+    vector<char> contents;
+    if (!GetFileContents(path, &contents))
+    {
+        return false;
+    }
+
+    // Now append the upload files as a binary (octet-stream) part
+    string filename_utf8 = WideToUTF8(path);
+    if (filename_utf8.empty())
+    {
+        return false;
+    }
+
+    string file_part_name_utf8 = WideToUTF8(name);
+    if (file_part_name_utf8.empty())
+    {
+        return false;
+    }
+
+    request_body->append("--" + boundary_str + "\r\n");
+    request_body->append("Content-Disposition: form-data; "
+                         "name=\"" + file_part_name_utf8 + "\"; "
+                         "filename=\"" + filename_utf8 + "\"\r\n");
+    request_body->append("Content-Type: application/octet-stream\r\n");
+    request_body->append("\r\n");
+
+    if (!contents.empty())
+    {
+        request_body->append(&(contents[0]), contents.size());
+    }
+    request_body->append("\r\n");
+
+    return true;
+}
+
 // static
 bool HTTPUpload::GenerateRequestBody(const map<wstring, wstring> &parameters,
                                      const map<wstring, wstring> &files,
@@ -285,35 +325,23 @@ bool HTTPUpload::GenerateRequestBody(const map<wstring, wstring> &parameters,
                          WideToUTF8(pos->second) + "\r\n");
   }
 
+  // Backtrace.io workaround - minidump attachment must be the first part of the request
+  auto&& it = files.find(L"upload_file_minidump");
+  if (it != files.cend())
+  {
+      if (!AddFileToRequestBody(request_body, boundary_str, it->first, it->second))
+          return false;
+  }
+
   for (map<wstring, wstring>::const_iterator pos = files.begin();
-       pos != files.end(); ++pos) {
-    vector<char> contents;
-    if (!GetFileContents(pos->second, &contents)) {
-      return false;
-    }
+       pos != files.end(); ++pos) 
+  {
+      // Skip minidump file since it's already been added
+      if (pos->first == L"upload_file_minidump")
+          continue;
 
-    // Now append the upload files as a binary (octet-stream) part
-    string filename_utf8 = WideToUTF8(pos->second);
-    if (filename_utf8.empty()) {
-      return false;
-    }
-
-    string file_part_name_utf8 = WideToUTF8(pos->first);
-    if (file_part_name_utf8.empty()) {
-      return false;
-    }
-
-    request_body->append("--" + boundary_str + "\r\n");
-    request_body->append("Content-Disposition: form-data; "
-      "name=\"" + file_part_name_utf8 + "\"; "
-      "filename=\"" + filename_utf8 + "\"\r\n");
-    request_body->append("Content-Type: application/octet-stream\r\n");
-    request_body->append("\r\n");
-
-    if (!contents.empty()) {
-      request_body->append(&(contents[0]), contents.size());
-    }
-    request_body->append("\r\n");
+      if (!AddFileToRequestBody(request_body, boundary_str, pos->first, pos->second))
+          return false;
   }
   request_body->append("--" + boundary_str + "--\r\n");
   return true;

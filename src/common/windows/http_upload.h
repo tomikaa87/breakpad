@@ -95,6 +95,11 @@ class HTTPUpload {
                                   const wstring &boundary,
                                   string *request_body);
 
+  static bool AddFileToRequestBody(string* request_body,
+                                   const std::string boundary_str,
+                                   const std::wstring& name,
+                                   const std::wstring& path);
+
   // Fills the supplied vector with the contents of filename.
   static bool GetFileContents(const wstring &filename, vector<char> *contents);
 
